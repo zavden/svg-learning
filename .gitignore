@@ -1,0 +1,66 @@
+# OS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100/
+.TemporaryItems/
+.Trashes/
+.fseventsd
+.directory
+
+# Editor and shell temp files
+*~
+.*.swp
+*.swp
+*.swo
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# IDEs and editor settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env and local-only config
+.env
+.env.*
+!.env.example
+*.local
+
+# Node / frontend tooling
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+.parcel-cache/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+coverage/
+dist/
+build/
+.cache/
+
+# Python tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Misc generated artifacts
+*.pid
+*.pid.lock
+*.out

@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Theory Previewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #f0f2f5;
+      --card-bg:    #ffffff;
+      --header-bg:  #1e293b;
+      --text:       #1e293b;
+      --text-muted: #64748b;
+      --border:     #e2e8f0;
+      --accent:     #3b82f6;
+      --code-bg:    #282c34;
+      --preview-bg: #0f172a;
+      --radius:     10px;
+      --shadow:     0 2px 12px rgba(0,0,0,.08);
+
+      /* Syntax colors (atom-one-dark inspired) */
+      --hl-default: #abb2bf;
+      --hl-comment: #5c6370;
+      --hl-tag:     #e06c75;
+      --hl-attr:    #d19a66;
+      --hl-value:   #98c379;
+      --hl-bracket: #56b6c2;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── App header ── */
+    .app-header {
+      background: var(--header-bg);
+      color: #f1f5f9;
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .app-header h1 { font-size: 16px; font-weight: 600; letter-spacing: .3px; }
+    .header-right  { display: flex; align-items: center; gap: 10px; }
+    #file-info     { font-size: 13px; color: #94a3b8; max-width: 240px;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Hamburger button */
+    .btn-hamburger {
+      background: rgba(255,255,255,.1);
+      color: #f1f5f9;
+      border: 1px solid rgba(255,255,255,.15);
+      width: 34px; height: 34px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 17px; line-height: 1;
+      display: none; /* shown via JS when file is loaded */
+      align-items: center; justify-content: center;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    .btn-hamburger:hover  { background: rgba(255,255,255,.22); }
+    .btn-hamburger.active { background: rgba(59,130,246,.35); border-color: var(--accent); }
+
+    .btn-header-action {
+      background: var(--accent); color: white; border: none;
+      padding: 6px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 13px; font-weight: 500; transition: background .15s; display: none;
+    }
+    .btn-header-action:hover { background: #2563eb; }
+
+    /* ── Drawer overlay ── */
+    .drawer-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 200;
+      opacity: 0; pointer-events: none;
+      transition: opacity .22s ease;
+    }
+    .drawer-overlay.open { opacity: 1; pointer-events: all; }
+
+    /* ── Drawer panel ── */
+    .drawer {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      width: 290px;
+      background: #0f1929;
+      z-index: 201;
+      transform: translateX(-100%);
+      transition: transform .24s ease;
+      display: flex; flex-direction: column;
+      box-shadow: 6px 0 32px rgba(0,0,0,.45);
+    }
+    .drawer.open { transform: translateX(0); }
+
+    .drawer-header {
+      height: 52px;
+      padding: 0 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+      flex-shrink: 0;
+    }
+    .drawer-title {
+      font-size: 13px; font-weight: 600; color: #f1f5f9; letter-spacing: .2px;
+    }
+    .drawer-close {
+      background: none; border: none; color: #64748b;
+      cursor: pointer; font-size: 22px; line-height: 1;
+      padding: 2px 4px; border-radius: 4px;
+      transition: color .15s;
+    }
+    .drawer-close:hover { color: #f1f5f9; }
+
+    .drawer-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+    .drawer-body::-webkit-scrollbar { width: 4px; }
+    .drawer-body::-webkit-scrollbar-track { background: transparent; }
+    .drawer-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+    .drawer-section-label {
+      padding: 10px 16px 4px;
+      font-size: 10px; font-weight: 600; letter-spacing: .8px;
+      color: #475569; text-transform: uppercase;
+    }
+
+    .drawer-file-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background .12s;
+    }
+    .drawer-file-item:hover { background: rgba(255,255,255,.05); }
+    .drawer-file-item.active {
+      background: rgba(59,130,246,.12);
+      border-left-color: var(--accent);
+    }
+    .drawer-file-icon { font-size: 15px; flex-shrink: 0; opacity: .7; }
+    .drawer-file-info { min-width: 0; }
+    .drawer-file-name {
+      font-size: 12.5px; font-weight: 500; color: #e2e8f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .drawer-file-item.active .drawer-file-name { color: #93c5fd; }
+    .drawer-file-path {
+      font-size: 10px; color: #475569;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .drawer-empty {
+      padding: 28px 18px;
+      font-size: 12px; color: #475569; text-align: center; line-height: 1.7;
+    }
+    .drawer-scan-hint {
+      margin: 8px 12px 0;
+      background: rgba(59,130,246,.1);
+      border: 1px solid rgba(59,130,246,.2);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 11px; color: #93c5fd; line-height: 1.6;
+    }
+
+    /* ── Drop zone wrap ── */
+    #dropzone-wrap {
+      display: flex; align-items: center; justify-content: center;
+      min-height: calc(100vh - 52px); padding: 32px 24px;
+    }
+
+    /* Welcome panel — column layout */
+    #welcome-panel {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 18px; width: 100%; max-width: 540px;
+    }
+
+    /* Scan section */
+    .scan-section { width: 100%; text-align: center; }
+    .btn-scan {
+      background: var(--header-bg); color: #f1f5f9;
+      border: 1.5px solid rgba(255,255,255,.12);
+      padding: 9px 22px; border-radius: 8px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: background .15s, border-color .15s;
+    }
+    .btn-scan:hover { background: #263548; border-color: var(--accent); }
+    .btn-scan-icon { font-size: 16px; }
+
+    /* Scan results */
+    #scan-results {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      display: none;
+    }
+    .scan-results-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: #f8fafc;
+    }
+    .scan-results-header span {
+      font-size: 12px; color: var(--text-muted); font-weight: 500;
+    }
+    .btn-clear-scan {
+      background: none; border: none; color: #94a3b8;
+      cursor: pointer; font-size: 12px; padding: 2px 6px;
+      border-radius: 4px; transition: color .15s, background .15s;
+    }
+    .btn-clear-scan:hover { color: #ef4444; background: #fff1f2; }
+
+    .scan-list { max-height: 240px; overflow-y: auto; }
+    .scan-list::-webkit-scrollbar { width: 4px; }
+    .scan-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+    .scan-file-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; cursor: pointer;
+      border-bottom: 1px solid #f1f5f9;
+      transition: background .12s;
+    }
+    .scan-file-item:last-child { border-bottom: none; }
+    .scan-file-item:hover { background: #eff6ff; }
+    .scan-file-item-icon { font-size: 15px; flex-shrink: 0; }
+    .scan-file-item-info { min-width: 0; }
+    .scan-file-item-name {
+      font-size: 13px; font-weight: 500; color: var(--text);
+    }
+    .scan-file-item-path {
+      font-size: 10px; color: var(--text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Drop zone */
+    #dropzone {
+      border: 2px dashed #cbd5e1; border-radius: 16px; padding: 48px 36px;
+      text-align: center; width: 100%;
+      background: var(--card-bg); cursor: pointer;
+      transition: border-color .2s, background .2s; user-select: none;
+    }
+    #dropzone.drag-over { border-color: var(--accent); background: #eff6ff; }
+    #dropzone:hover     { border-color: #94a3b8; }
+    .dropzone-icon { font-size: 44px; margin-bottom: 16px; line-height: 1; }
+    #dropzone h2   { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    #dropzone p    { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+    .drop-hint     { margin-top: 10px; font-size: 11px; color: #94a3b8; }
+
+    /* ── Content ── */
+    #content { max-width: 1440px; margin: 0 auto; padding: 24px 20px 48px; display: none; }
+
+    /* ── Text sections ── */
+    .text-section {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px 32px;
+      margin-bottom: 16px; box-shadow: var(--shadow); line-height: 1.7;
+    }
+    .text-section h1 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+    .text-section h2 {
+      font-size: 17px; font-weight: 600; color: var(--accent);
+      margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--border);
+    }
+    .text-section h3 { font-size: 15px; font-weight: 600; margin: 16px 0 6px; }
+    .text-section p  { color: var(--text-muted); margin-bottom: 8px; }
+    .text-section code {
+      background: #f1f5f9; color: #0f172a; padding: 2px 6px; border-radius: 4px;
+      font-family: 'Fira Code', Consolas, monospace; font-size: .875em;
+    }
+    .text-section strong { color: var(--text); }
+    .text-section em     { color: var(--text-muted); font-style: italic; }
+    .text-section ul, .text-section ol { margin: 8px 0 8px 20px; color: var(--text-muted); }
+    .text-section li { margin-bottom: 4px; }
+
+    /* ── SVG block card ── */
+    .svg-block {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      margin-bottom: 24px; box-shadow: var(--shadow);
+    }
+    .svg-block-header {
+      background: var(--header-bg); color: #f1f5f9;
+      padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+    }
+    .svg-block-badge {
+      background: var(--accent); color: white;
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .svg-block-title {
+      font-size: 13px; font-weight: 500; color: #e2e8f0;
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .zoom-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .zoom-btn {
+      background: rgba(255,255,255,.1); color: #f1f5f9;
+      border: 1px solid rgba(255,255,255,.15);
+      width: 26px; height: 26px; border-radius: 5px;
+      cursor: pointer; font-size: 15px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .zoom-btn:hover  { background: rgba(255,255,255,.22); }
+    .zoom-btn:active { background: rgba(255,255,255,.08); }
+    .zoom-label {
+      font-size: 11px; color: #94a3b8;
+      min-width: 36px; text-align: center; font-variant-numeric: tabular-nums;
+    }
+
+    /* View toggle (code+SVG ↔ solo SVG) */
+    .view-toggle-sep {
+      width: 1px; height: 18px; background: rgba(255,255,255,.12);
+      margin: 0 4px; flex-shrink: 0;
+    }
+    .view-toggle {
+      background: rgba(255,255,255,.1); color: #94a3b8;
+      border: 1px solid rgba(255,255,255,.15);
+      width: 26px; height: 26px; border-radius: 5px;
+      cursor: pointer; font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s, border-color .15s;
+      flex-shrink: 0; font-family: monospace; letter-spacing: -1px;
+    }
+    .view-toggle:hover  { background: rgba(255,255,255,.22); color: #f1f5f9; }
+    .view-toggle.is-solo {
+      background: rgba(59,130,246,.25);
+      border-color: var(--accent);
+      color: #93c5fd;
+    }
+    @media (max-width: 860px) {
+      .view-toggle, .view-toggle-sep { display: none; }
+    }
+
+    /* Split layout */
+    .svg-block-split { display: flex; }
+
+    /* Drag handle between code and preview */
+    .resizer {
+      width: 5px; background: #0b1120;
+      cursor: col-resize; flex-shrink: 0;
+      transition: background .15s; z-index: 2;
+    }
+    .resizer:hover, .resizer.dragging { background: var(--accent); }
+
+    /* ── Code pane: textarea mirror ── */
+    .code-pane {
+      position: relative; background: var(--code-bg);
+      overflow: hidden; width: 50%; flex-shrink: 0;
+    }
+
+    .code-sizer {
+      visibility: hidden; pointer-events: none;
+      padding: 18px 20px;
+      font-family: 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace;
+      font-size: 12.5px; line-height: 1.65;
+      tab-size: 2; white-space: pre; word-wrap: normal; overflow-wrap: normal;
+      min-height: 120px;
+    }
+
+    .code-highlight, .code-textarea {
+      position: absolute; inset: 0;
+      padding: 18px 20px;
+      font-family: 'Fira Code', 'Cascadia Code', Consolas, 'Courier New', monospace;
+      font-size: 12.5px; line-height: 1.65;
+      tab-size: 2; white-space: pre; word-wrap: normal; overflow-wrap: normal;
+    }
+
+    .code-highlight {
+      overflow: auto; color: var(--hl-default);
+      pointer-events: none; scrollbar-width: none;
+    }
+    .code-highlight::-webkit-scrollbar { display: none; }
+
+    .hl-comment { color: var(--hl-comment); font-style: italic; }
+    .hl-tag     { color: var(--hl-tag); }
+    .hl-attr    { color: var(--hl-attr); }
+    .hl-value   { color: var(--hl-value); }
+    .hl-bracket { color: var(--hl-bracket); }
+
+    .code-textarea {
+      overflow: auto; background: transparent;
+      color: transparent; caret-color: #61afef;
+      border: none; outline: none; resize: none; z-index: 1;
+    }
+    .code-textarea:focus { box-shadow: inset 2px 0 0 var(--accent); }
+    .code-textarea::selection { background: rgba(97,175,239,.25); color: transparent; }
+    .code-textarea::-webkit-scrollbar { width: 6px; height: 6px; }
+    .code-textarea::-webkit-scrollbar-track { background: #21252b; }
+    .code-textarea::-webkit-scrollbar-thumb { background: #4b5568; border-radius: 3px; }
+
+    /* ── Preview pane ── */
+    .preview-pane {
+      flex: 1; min-width: 0;
+      background: var(--preview-bg);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px; overflow: auto;
+    }
+    .preview-pane svg { max-width: 100%; height: auto; }
+    .preview-error { color: #f87171; font-size: 13px; font-family: monospace; }
+    .preview-pane::-webkit-scrollbar { width: 6px; height: 6px; }
+    .preview-pane::-webkit-scrollbar-track { background: #080f1c; }
+    .preview-pane::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      .svg-block-split { flex-direction: column; }
+      .code-pane { width: 100% !important; }
+      .resizer { display: none; }
+      .preview-pane { border-top: 1px solid #0b1120; }
+      .text-section { padding: 18px 20px; }
+    }
+    @media (max-width: 480px) {
+      #content { padding: 16px 12px 40px; }
+      .svg-block-header { padding: 8px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Drawer overlay (click to close) ── -->
+<div id="drawer-overlay" class="drawer-overlay"></div>
+
+<!-- ── Side drawer: file navigator ── -->
+<nav id="drawer" class="drawer">
+  <div class="drawer-header">
+    <span class="drawer-title">Archivos Markdown</span>
+    <button id="btn-drawer-close" class="drawer-close" title="Cerrar">&#x2715;</button>
+  </div>
+  <div class="drawer-body" id="drawer-body">
+    <p class="drawer-empty">
+      No se han escaneado archivos.
+      <span class="drawer-scan-hint">
+        Usa el botón <strong>Scan</strong> en la pantalla de inicio para
+        explorar una carpeta y encontrar todos los archivos <code>.md</code>.
+      </span>
+    </p>
+  </div>
+</nav>
+
+<!-- ── App header ── -->
+<header class="app-header">
+  <div class="header-left">
+    <button id="btn-hamburger" class="btn-hamburger" title="Navegar archivos">&#9776;</button>
+    <h1>SVG Previewer</h1>
+  </div>
+  <div class="header-right">
+    <span id="file-info">Arrastra un archivo .md o una carpeta</span>
+    <button class="btn-header-action" id="btn-load" onclick="resetApp()">Cargar otro</button>
+  </div>
+</header>
+
+<!-- ── Drop zone / welcome screen ── -->
+<div id="dropzone-wrap">
+  <div id="welcome-panel">
+
+    <!-- Scan section -->
+    <div class="scan-section">
+      <button id="btn-scan" class="btn-scan">
+        <span class="btn-scan-icon">&#128193;</span>
+        Scan carpeta
+      </button>
+      <!-- Hidden directory input -->
+      <input type="file" id="dir-input" style="display:none" multiple>
+    </div>
+
+    <!-- Scan results (shown after scan) -->
+    <div id="scan-results">
+      <div class="scan-results-header">
+        <span id="scan-info"></span>
+        <button id="btn-clear-scan" class="btn-clear-scan">Limpiar</button>
+      </div>
+      <div id="scan-list" class="scan-list"></div>
+    </div>
+
+    <!-- Drop zone -->
+    <div id="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="dropzone-icon">&#128196;</div>
+      <h2>Arrastra un archivo o carpeta aquí</h2>
+      <p>o haz clic para seleccionar un archivo</p>
+      <p class="drop-hint">
+        Arrastra una <strong>carpeta</strong> para escanear todos sus archivos <code>.md</code>
+        &nbsp;·&nbsp; o un archivo <code>.md</code> individual
+      </p>
+      <input type="file" id="file-input" accept=".md,.txt" style="display:none">
+    </div>
+
+  </div>
+</div>
+
+<div id="content"></div>
+
+<script>
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const $dropWrap      = document.getElementById('dropzone-wrap');
+  const $dropzone      = document.getElementById('dropzone');
+  const $fileInput     = document.getElementById('file-input');
+  const $dirInput      = document.getElementById('dir-input');
+  const $content       = document.getElementById('content');
+  const $fileInfo      = document.getElementById('file-info');
+  const $btnLoad       = document.getElementById('btn-load');
+  const $hamburger     = document.getElementById('btn-hamburger');
+  const $drawer        = document.getElementById('drawer');
+  const $drawerOverlay = document.getElementById('drawer-overlay');
+  const $drawerClose   = document.getElementById('btn-drawer-close');
+  const $drawerBody    = document.getElementById('drawer-body');
+  const $scanResults   = document.getElementById('scan-results');
+  const $scanInfo      = document.getElementById('scan-info');
+  const $scanList      = document.getElementById('scan-list');
+
+  // ── App state ─────────────────────────────────────────────────────────────
+  let scannedFiles    = [];   // File[] from directory scan
+  let currentFileName = '';   // name of the currently rendered file
+
+  // ── Drawer ────────────────────────────────────────────────────────────────
+  function openDrawer() {
+    $drawer.classList.add('open');
+    $drawerOverlay.classList.add('open');
+    $hamburger.classList.add('active');
+  }
+  function closeDrawer() {
+    $drawer.classList.remove('open');
+    $drawerOverlay.classList.remove('open');
+    $hamburger.classList.remove('active');
+  }
+
+  $hamburger.addEventListener('click', openDrawer);
+  $drawerClose.addEventListener('click', closeDrawer);
+  $drawerOverlay.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+  function renderDrawerList() {
+    if (!scannedFiles.length) {
+      $drawerBody.innerHTML =
+        '<p class="drawer-empty">No se han escaneado archivos.' +
+        '<span class="drawer-scan-hint">Usa el botón <strong>Scan</strong>' +
+        ' para explorar una carpeta y encontrar todos los archivos <code>.md</code>.</span></p>';
+      return;
+    }
+    $drawerBody.innerHTML = '';
+    const label = document.createElement('div');
+    label.className = 'drawer-section-label';
+    label.textContent = `${scannedFiles.length} archivo${scannedFiles.length > 1 ? 's' : ''}`;
+    $drawerBody.appendChild(label);
+
+    scannedFiles.forEach(file => {
+      const pathParts = (file.webkitRelativePath || file.name).split('/');
+      const dir = pathParts.slice(0, -1).join('/') || '—';
+
+      const item = document.createElement('div');
+      item.className = 'drawer-file-item' + (file.name === currentFileName ? ' active' : '');
+      item.innerHTML =
+        '<span class="drawer-file-icon">' + fileIcon(file.name) + '</span>' +
+        '<div class="drawer-file-info">' +
+          '<div class="drawer-file-name">' + escHtml(file.name) + '</div>' +
+          '<div class="drawer-file-path">' + escHtml(dir)       + '</div>' +
+        '</div>';
+      item.addEventListener('click', () => { loadFile(file); closeDrawer(); });
+      $drawerBody.appendChild(item);
+    });
+  }
+
+  // ── Scan ──────────────────────────────────────────────────────────────────
+  document.getElementById('btn-scan').addEventListener('click', () => {
+    // webkitdirectory is the standard way to pick a folder in browsers
+    $dirInput.setAttribute('webkitdirectory', '');
+    $dirInput.click();
+  });
+
+  $dirInput.addEventListener('change', e => {
+    const all = Array.from(e.target.files);
+    scannedFiles = all
+      .filter(f => /\.md$/i.test(f.name))
+      .sort((a, b) =>
+        (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name)
+      );
+    e.target.value = ''; // allow re-scanning same folder
+    renderScanResults();
+    renderDrawerList();
+  });
+
+  function fileIcon(name) {
+    if (/^THEORY/i.test(name))           return '&#128218;'; // 📚
+    if (/^NOTES/i.test(name))            return '&#128203;'; // 📋
+    if (/^GLOSARIO/i.test(name))         return '&#128214;'; // 📖
+    if (/^PITFALLS/i.test(name))         return '&#9888;&#65039;'; // ⚠️
+    if (/^REFERENCE/i.test(name))        return '&#128196;'; // 📄
+    if (/^SUGERENCIAS/i.test(name))      return '&#128161;'; // 💡
+    if (/^GUIA/i.test(name))             return '&#128220;'; // 📜
+    if (/^challenge/i.test(name))        return '&#127919;'; // 🎯
+    return '&#128196;'; // 📄 default
+  }
+
+  function renderScanResults() {
+    if (!scannedFiles.length) {
+      $scanResults.style.display = 'none';
+      return;
+    }
+    $scanInfo.textContent =
+      scannedFiles.length + ' archivo' + (scannedFiles.length > 1 ? 's' : '') + ' encontrado' +
+      (scannedFiles.length > 1 ? 's' : '');
+    $scanList.innerHTML = '';
+
+    scannedFiles.forEach(file => {
+      const pathParts = (file.webkitRelativePath || file.name).split('/');
+      const dir = pathParts.slice(0, -1).join('/') || '—';
+
+      const item = document.createElement('div');
+      item.className = 'scan-file-item';
+      item.innerHTML =
+        '<span class="scan-file-item-icon">' + fileIcon(file.name) + '</span>' +
+        '<div class="scan-file-item-info">' +
+          '<div class="scan-file-item-name">' + escHtml(file.name) + '</div>' +
+          '<div class="scan-file-item-path">' + escHtml(dir)       + '</div>' +
+        '</div>';
+      item.addEventListener('click', () => loadFile(file));
+      $scanList.appendChild(item);
+    });
+
+    $scanResults.style.display = 'block';
+  }
+
+  document.getElementById('btn-clear-scan').addEventListener('click', () => {
+    scannedFiles = [];
+    renderScanResults();
+    renderDrawerList();
+  });
+
+  // ── Folder scan helpers ───────────────────────────────────────────────────
+
+  // readEntries() returns at most 100 items per call — loop until exhausted
+  function readAllEntries(reader) {
+    return new Promise(resolve => {
+      const all = [];
+      function next() {
+        reader.readEntries(batch => {
+          if (!batch.length) { resolve(all); return; }
+          all.push(...batch);
+          next();
+        }, () => resolve(all)); // on error, return what we have
+      }
+      next();
+    });
+  }
+
+  // Recursively collect File objects whose names end in .md
+  async function collectTheoryFiles(entry) {
+    if (entry.isFile) {
+      if (!/\.md$/i.test(entry.name)) return [];
+      return new Promise(resolve => entry.file(f => resolve([f]), () => resolve([])));
+    }
+    if (entry.isDirectory) {
+      const entries = await readAllEntries(entry.createReader());
+      const nested  = await Promise.all(entries.map(e => collectTheoryFiles(e)));
+      return nested.flat();
+    }
+    return [];
+  }
+
+  // ── Drag & drop ───────────────────────────────────────────────────────────
+  document.addEventListener('dragover', e => {
+    e.preventDefault();
+    $dropzone.classList.add('drag-over');
+  });
+  document.addEventListener('dragleave', e => {
+    if (!e.relatedTarget || !$dropWrap.contains(e.relatedTarget))
+      $dropzone.classList.remove('drag-over');
+  });
+  document.addEventListener('drop', async e => {
+    e.preventDefault();
+    $dropzone.classList.remove('drag-over');
+
+    const items   = Array.from(e.dataTransfer.items || []);
+    const entries = items
+      .map(it => it.webkitGetAsEntry && it.webkitGetAsEntry())
+      .filter(Boolean);
+
+    // If any entry is a directory (or multiple items dropped), treat as folder scan
+    const hasDir = entries.some(en => en.isDirectory);
+    if (hasDir || entries.length > 1) {
+      const files = (await Promise.all(entries.map(en => collectTheoryFiles(en)))).flat();
+      if (!files.length) return;
+      scannedFiles = files.sort((a, b) =>
+        (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name)
+      );
+      renderScanResults();
+      renderDrawerList();
+      return;
+    }
+
+    // Single file drop — load it directly
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+  $fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  // ── File loading ──────────────────────────────────────────────────────────
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      currentFileName = file.name;
+      $fileInfo.textContent = file.name;
+      $btnLoad.style.display = 'block';
+      $hamburger.style.display = 'flex';
+      $dropWrap.style.display = 'none';
+      render(e.target.result);
+      $content.style.display = 'block';
+      renderDrawerList(); // refresh active state
+    };
+    reader.readAsText(file);
+  }
+
+  function resetApp() {
+    currentFileName = '';
+    $content.style.display = 'none';
+    $content.innerHTML = '';
+    $dropWrap.style.display = 'flex';
+    $fileInfo.textContent = 'Arrastra un archivo .md o una carpeta';
+    $btnLoad.style.display = 'none';
+    $hamburger.style.display = 'none';
+    $fileInput.value = '';
+    closeDrawer();
+    renderDrawerList(); // clear active state
+  }
+
+  // ── SVG Syntax Highlighter (pure JS, zero dependencies) ───────────────────
+
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+  const esc  = s => s.replace(/[&<>"]/g, c => ESC_MAP[c]);
+  const span = (cls, s) => `<span class="hl-${cls}">${s}</span>`;
+
+  function findTagEnd(code, start) {
+    let i = start + 1, inQ = null;
+    while (i < code.length) {
+      const c = code[i];
+      if      (inQ && c === inQ)                 inQ = null;
+      else if (!inQ && (c === '"' || c === "'")) inQ = c;
+      else if (!inQ && c === '>')                return i + 1;
+      i++;
+    }
+    return code.length;
+  }
+
+  function tokenizeTag(tag) {
+    let out = '', i = 0;
+    if (tag[1] === '/') { out += span('bracket', '&lt;/'); i = 2; }
+    else                { out += span('bracket', '&lt;');  i = 1; }
+    let j = i;
+    while (j < tag.length && /[\w:-]/.test(tag[j])) j++;
+    if (j > i) { out += span('tag', esc(tag.slice(i, j))); i = j; }
+    while (i < tag.length) {
+      const c = tag[i];
+      if (c === '>' ) { out += span('bracket', '&gt;'); break; }
+      if (c === '/' && tag[i + 1] === '>') { out += span('bracket', '/&gt;'); break; }
+      if (/\s/.test(c)) { out += c === '\n' ? '\n' : esc(c); i++; continue; }
+      let k = i;
+      while (k < tag.length && /[\w:-]/.test(tag[k])) k++;
+      if (k > i) {
+        out += span('attr', esc(tag.slice(i, k)));
+        i = k;
+        if (tag[i] === '=') {
+          out += span('bracket', '=');
+          i++;
+          if (tag[i] === '"' || tag[i] === "'") {
+            const q = tag[i]; let m = i + 1;
+            while (m < tag.length && tag[m] !== q) m++;
+            out += span('value', esc(tag.slice(i, m + 1)));
+            i = m + 1;
+          }
+        }
+        continue;
+      }
+      out += esc(c); i++;
+    }
+    return out;
+  }
+
+  function highlightSVG(code) {
+    let out = '', i = 0;
+    while (i < code.length) {
+      if (code.startsWith('<!--', i)) {
+        const end = code.indexOf('-->', i + 4);
+        const slice = end === -1 ? code.slice(i) : code.slice(i, end + 3);
+        out += span('comment', esc(slice));
+        i += slice.length; continue;
+      }
+      if (code[i] === '<') {
+        const end = findTagEnd(code, i);
+        out += tokenizeTag(code.slice(i, end));
+        i = end; continue;
+      }
+      let j = i;
+      while (j < code.length && code[j] !== '<') j++;
+      out += esc(code.slice(i, j));
+      i = j;
+    }
+    return out;
+  }
+
+  // ── Markdown parsing ──────────────────────────────────────────────────────
+  function parseSegments(md) {
+    const segments = [];
+    // Matches ```svg (normal) and ```svg-only (starts in solo/preview-only mode)
+    const RE = /```(svg(?:-only)?)\r?\n([\s\S]*?)```/g;
+    let last = 0, m;
+    while ((m = RE.exec(md)) !== null) {
+      const text = md.slice(last, m.index).trim();
+      if (text) segments.push({ type: 'text', content: text });
+      segments.push({ type: 'svg', code: m[2], solo: m[1] === 'svg-only' });
+      last = RE.lastIndex;
+    }
+    const tail = md.slice(last).trim();
+    if (tail) segments.push({ type: 'text', content: tail });
+    return segments;
+  }
+
+  function lastHeading(text) {
+    const all = [...text.matchAll(/^#{1,3}\s+(.+)$/gm)];
+    return all.length ? all[all.length - 1][1].replace(/`/g, '') : null;
+  }
+
+  // ── Minimal Markdown → HTML ───────────────────────────────────────────────
+  function mdToHTML(md) {
+    const lines = md.split('\n');
+    let html = '', listOpen = false;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (!t) {
+        if (listOpen) { html += '</ul>'; listOpen = false; }
+        html += '<br>'; continue;
+      }
+      const h = t.match(/^(#{1,3})\s+(.+)$/);
+      if (h) {
+        if (listOpen) { html += '</ul>'; listOpen = false; }
+        html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; continue;
+      }
+      if (/^---+$/.test(t)) {
+        html += '<hr style="border:none;border-top:1px solid var(--border);margin:12px 0">'; continue;
+      }
+      if (t.startsWith('```')) {
+        if (listOpen) { html += '</ul>'; listOpen = false; }
+        let code = ''; i++;
+        while (i < lines.length && !lines[i].trim().startsWith('```')) code += lines[i++] + '\n';
+        html += `<pre style="background:#f1f5f9;padding:10px 14px;border-radius:6px;overflow:auto;margin:8px 0;font-size:12px;line-height:1.5"><code>${escHtml(code.trimEnd())}</code></pre>`;
+        continue;
+      }
+      if (/^[-*]\s+/.test(t)) {
+        if (!listOpen) { html += '<ul>'; listOpen = true; }
+        html += `<li>${inline(t.slice(2).trim())}</li>`; continue;
+      }
+      if (listOpen) { html += '</ul>'; listOpen = false; }
+      html += `<p>${inline(t)}</p>`;
+    }
+    if (listOpen) html += '</ul>';
+    return html;
+  }
+
+  function inline(s) {
+    return escHtml(s)
+      .replace(/`([^`]+)`/g,       '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g,     '<em>$1</em>');
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  let svgCount = 0;
+
+  function render(markdown) {
+    svgCount = 0;
+    $content.innerHTML = '';
+    const segments = parseSegments(markdown);
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.type === 'text') {
+        const div = document.createElement('div');
+        div.className = 'text-section';
+        div.innerHTML = mdToHTML(seg.content);
+        $content.appendChild(div);
+      } else {
+        let title = `SVG #${++svgCount}`;
+        if (i > 0 && segments[i - 1].type === 'text') {
+          const h = lastHeading(segments[i - 1].content);
+          if (h) title = h;
+        }
+        $content.appendChild(buildSvgCard(seg.code, svgCount, title, seg.solo));
+      }
+    }
+  }
+
+  // ── SVG Card ──────────────────────────────────────────────────────────────
+  function buildSvgCard(svgCode, n, title, soloDefault = false) {
+    const card = document.createElement('div');
+    card.className = 'svg-block';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'svg-block-header';
+
+    const badge = document.createElement('div');
+    badge.className = 'svg-block-badge';
+    badge.textContent = n;
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'svg-block-title';
+    titleEl.textContent = title;
+
+    const zoomControls = document.createElement('div');
+    zoomControls.className = 'zoom-controls';
+
+    const btnZoomOut = document.createElement('button');
+    btnZoomOut.className = 'zoom-btn';
+    btnZoomOut.textContent = '−';
+    btnZoomOut.title = 'Reducir';
+
+    const zoomLabel = document.createElement('span');
+    zoomLabel.className = 'zoom-label';
+    zoomLabel.textContent = '100%';
+
+    const btnZoomIn = document.createElement('button');
+    btnZoomIn.className = 'zoom-btn';
+    btnZoomIn.textContent = '+';
+    btnZoomIn.title = 'Ampliar';
+
+    // View toggle: code+SVG ↔ solo SVG
+    const toggleSep = document.createElement('div');
+    toggleSep.className = 'view-toggle-sep';
+
+    const viewToggle = document.createElement('button');
+    viewToggle.className = 'view-toggle';
+    viewToggle.title = soloDefault ? 'Mostrar código' : 'Solo SVG';
+    // ⊞ = both panes  ⊟ = solo preview
+    viewToggle.textContent = soloDefault ? '\u229F' : '\u229E';
+
+    zoomControls.append(btnZoomOut, zoomLabel, btnZoomIn, toggleSep, viewToggle);
+    header.append(badge, titleEl, zoomControls);
+    card.appendChild(header);
+
+    // Split
+    const split = document.createElement('div');
+    split.className = 'svg-block-split';
+
+    // Code pane
+    const codePane = document.createElement('div');
+    codePane.className = 'code-pane';
+
+    const sizer = document.createElement('div');
+    sizer.className = 'code-sizer';
+    sizer.setAttribute('aria-hidden', 'true');
+
+    const hlDiv = document.createElement('div');
+    hlDiv.className = 'code-highlight';
+    hlDiv.setAttribute('aria-hidden', 'true');
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'code-textarea';
+    textarea.value = svgCode.trim();
+    textarea.spellcheck = false;
+    textarea.autocomplete = 'off';
+    textarea.autocorrect = 'off';
+    textarea.autocapitalize = 'off';
+
+    codePane.append(sizer, hlDiv, textarea);
+
+    // Preview pane
+    const previewPane = document.createElement('div');
+    previewPane.className = 'preview-pane';
+
+    // Resizer
+    const resizer = document.createElement('div');
+    resizer.className = 'resizer';
+
+    split.append(codePane, resizer, previewPane);
+    card.appendChild(split);
+
+    // Drag to resize
+    resizer.addEventListener('mousedown', e => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = codePane.getBoundingClientRect().width;
+      resizer.classList.add('dragging');
+      document.body.style.cursor    = 'col-resize';
+      document.body.style.userSelect = 'none';
+      function onMove(ev) {
+        const totalW = split.getBoundingClientRect().width;
+        const newW   = Math.max(150, Math.min(totalW - 155, startW + ev.clientX - startX));
+        codePane.style.width = newW + 'px';
+      }
+      function onUp() {
+        resizer.classList.remove('dragging');
+        document.body.style.cursor    = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+
+    // State
+    let scale = 1, natW = null, natH = null;
+
+    function renderPreview(code) {
+      previewPane.innerHTML = code.trim();
+      const svg = previewPane.querySelector('svg');
+      if (!svg) {
+        previewPane.innerHTML = '<div class="preview-error">&#9888; No se encontró &lt;svg&gt;</div>';
+        natW = natH = null;
+        return;
+      }
+      const attrW = svg.getAttribute('width');
+      const attrH = svg.getAttribute('height');
+      natW = (attrW && !attrW.includes('%')) ? parseFloat(attrW) : null;
+      natH = (attrH && !attrH.includes('%')) ? parseFloat(attrH) : null;
+
+      const vb = svg.getAttribute('viewBox');
+      if (vb && (natW === null || natH === null)) {
+        const parts = vb.trim().split(/[\s,]+/);
+        if (parts.length >= 4) {
+          if (natW === null) natW = parseFloat(parts[2]);
+          if (natH === null) natH = parseFloat(parts[3]);
+        }
+      }
+      if (!vb && natW !== null && natH !== null) {
+        svg.setAttribute('viewBox', `0 0 ${natW} ${natH}`);
+      }
+      if (!natW) svg.setAttribute('width', '100%');
+      applyZoomToSvg(svg);
+    }
+
+    function applyZoomToSvg(svg) {
+      if (natW !== null) {
+        const w = Math.round(natW * scale);
+        svg.setAttribute('width', w);
+        svg.style.width = w + 'px';
+        if (natH !== null) {
+          const h = Math.round(natH * scale);
+          svg.setAttribute('height', h);
+          svg.style.height = h + 'px';
+        }
+      }
+    }
+
+    function applyZoom() {
+      const svg = previewPane.querySelector('svg');
+      if (svg) applyZoomToSvg(svg);
+      zoomLabel.textContent = Math.round(scale * 100) + '%';
+    }
+
+    function syncSizer(text) { sizer.textContent = text + '\n'; }
+
+    textarea.addEventListener('scroll', () => {
+      hlDiv.scrollTop  = textarea.scrollTop;
+      hlDiv.scrollLeft = textarea.scrollLeft;
+    });
+    textarea.addEventListener('keydown', e => {
+      if (e.key !== 'Tab') return;
+      e.preventDefault();
+      const s = textarea.selectionStart;
+      textarea.value = textarea.value.slice(0, s) + '  ' + textarea.value.slice(textarea.selectionEnd);
+      textarea.selectionStart = textarea.selectionEnd = s + 2;
+      syncSizer(textarea.value);
+      hlDiv.innerHTML = highlightSVG(textarea.value);
+      renderPreview(textarea.value);
+    });
+    textarea.addEventListener('input', () => {
+      syncSizer(textarea.value);
+      hlDiv.innerHTML = highlightSVG(textarea.value);
+      renderPreview(textarea.value);
+    });
+
+    btnZoomIn.addEventListener('click',  () => { scale = Math.min(+(scale + 0.25).toFixed(2), 4);    applyZoom(); });
+    btnZoomOut.addEventListener('click', () => { scale = Math.max(+(scale - 0.25).toFixed(2), 0.25); applyZoom(); });
+
+    // ── View toggle logic ──
+    let isSolo = soloDefault;
+
+    function applySoloState() {
+      if (isSolo) {
+        codePane.style.display = 'none';
+        resizer.style.display  = 'none';
+        viewToggle.classList.add('is-solo');
+        viewToggle.textContent = '\u229F'; // ⊟ (solo)
+        viewToggle.title = 'Mostrar código';
+      } else {
+        codePane.style.display = '';
+        resizer.style.display  = '';
+        viewToggle.classList.remove('is-solo');
+        viewToggle.textContent = '\u229E'; // ⊞ (ambos)
+        viewToggle.title = 'Solo SVG';
+      }
+    }
+
+    viewToggle.addEventListener('click', () => { isSolo = !isSolo; applySoloState(); });
+    applySoloState(); // apply initial state
+
+    const initialCode = svgCode.trim();
+    syncSizer(initialCode);
+    hlDiv.innerHTML = highlightSVG(initialCode);
+    renderPreview(initialCode);
+
+    return card;
+  }
+</script>
+</body>
+</html>
